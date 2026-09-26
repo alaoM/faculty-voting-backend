@@ -1,0 +1,24 @@
+{
+  "name": "armti-voting-backend",
+  "version": "1.0.0",
+  "description": "ARMTI Faculty Voting System - Backend API Server with MySQL & Live Google Sheets Sync",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "server": "node src/index.js",
+    "server:dev": "node --watch src/index.js",
+    "test": "node test/test_system.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.8.1",
+    "cors": "^2.8.5",
+    "csv-parse": "^5.6.0",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "express-rate-limit": "^8.6.2",
+    "mysql2": "^3.12.0",
+    "xlsx": "^0.18.5"
+  }
+}
