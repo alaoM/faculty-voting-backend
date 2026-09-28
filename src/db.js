@@ -167,6 +167,18 @@ async function createMySQLTables() {
   `);
 
   await mysqlPool.query(`
+    CREATE TABLE IF NOT EXISTS researcher_submissions (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      staff_id VARCHAR(64) NOT NULL,
+      full_name VARCHAR(255) NOT NULL,
+      department VARCHAR(255) NULL,
+      publications TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY unique_staff_pub (staff_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `);
+
+  await mysqlPool.query(`
     CREATE TABLE IF NOT EXISTS audit_logs (
       id INT AUTO_INCREMENT PRIMARY KEY,
       action_type VARCHAR(64) NOT NULL,
@@ -228,6 +240,15 @@ function createSQLiteTables() {
       nominee_name TEXT NOT NULL,
       nominee_dept TEXT,
       citations TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS researcher_submissions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      staff_id TEXT NOT NULL UNIQUE,
+      full_name TEXT NOT NULL,
+      department TEXT,
+      publications TEXT NOT NULL,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -716,6 +737,18 @@ export async function submitBallot(staffId, votesArray) {
         );
       }
 
+      // Record voter's own research publication submission if provided for Best Researcher
+      const researcherVote = votesArray.find((item) => item.category_id === 'cat-2' || item.category_title?.toLowerCase().includes('research'));
+      const personalPubs = researcherVote?.citations?.trim();
+      if (personalPubs) {
+        await connection.query(
+          `INSERT INTO researcher_submissions (staff_id, full_name, department, publications, created_at)
+           VALUES (?, ?, ?, ?, ?)
+           ON DUPLICATE KEY UPDATE publications = VALUES(publications), created_at = VALUES(created_at)`,
+          [voter.staff_id, voter.full_name, voter.department || 'ARMTI Faculty', personalPubs, now]
+        );
+      }
+
       await connection.query(
         `UPDATE voters SET has_voted = 1, voted_at = ?, receipt_code = ? WHERE staff_id = ?`,
         [now, receiptCode, voter.staff_id]
@@ -749,6 +782,12 @@ export async function submitBallot(staffId, votesArray) {
       `UPDATE voters SET has_voted = 1, voted_at = ?, receipt_code = ? WHERE staff_id = ?`
     );
 
+    const insertPubStmt = sqliteDb.prepare(
+      `INSERT INTO researcher_submissions (staff_id, full_name, department, publications, created_at)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(staff_id) DO UPDATE SET publications = excluded.publications, created_at = excluded.created_at`
+    );
+
     const voteTransaction = sqliteDb.transaction(() => {
       for (const item of votesArray) {
         if (!item.nominee_name || item.nominee_name === '__ABSTAIN__') {
@@ -756,6 +795,14 @@ export async function submitBallot(staffId, votesArray) {
         }
         insertBallot.run(receiptCode, item.category_id, item.category_title, item.nominee_staff_id || null, item.nominee_name, item.nominee_dept || null, item.citations?.trim() || null);
       }
+
+      // Record voter's own research publication submission if provided for Best Researcher
+      const researcherVote = votesArray.find((item) => item.category_id === 'cat-2' || item.category_title?.toLowerCase().includes('research'));
+      const personalPubs = researcherVote?.citations?.trim();
+      if (personalPubs) {
+        insertPubStmt.run(voter.staff_id, voter.full_name, voter.department || 'ARMTI Faculty', personalPubs, now.toISOString());
+      }
+
       updateVoter.run(now.toISOString(), receiptCode, voter.staff_id);
     });
 
@@ -865,32 +912,29 @@ export async function getResults() {
 export async function resetElection() {
   if (dbMode === 'mysql') {
     await mysqlPool.query('DELETE FROM ballots');
+    await mysqlPool.query('DELETE FROM researcher_submissions');
     await mysqlPool.query('UPDATE voters SET has_voted = 0, voted_at = NULL, receipt_code = NULL, is_eligible = 1');
   } else {
     sqliteDb.exec(`
       DELETE FROM ballots;
+      DELETE FROM researcher_submissions;
       UPDATE voters SET has_voted = 0, voted_at = NULL, receipt_code = NULL, is_eligible = 1;
     `);
   }
-  await logAdminAction('RESET_ELECTION', null, null, 'All ballots were cleared and voter statuses reset.');
+  await logAdminAction('RESET_ELECTION', null, null, 'All ballots and researcher submissions were cleared and voter statuses reset.');
   return true;
 }
 
 export async function getResearchPublications() {
   const query = `
     SELECT 
-      receipt_code, 
-      category_id, 
-      category_title, 
-      nominee_name, 
-      nominee_dept, 
-      citations, 
+      staff_id, 
+      full_name, 
+      department, 
+      publications as citations, 
       created_at 
-    FROM ballots 
-    WHERE (category_id = 'cat-2' OR LOWER(category_title) LIKE '%research%')
-      AND citations IS NOT NULL 
-      AND TRIM(citations) != ''
-    ORDER BY created_at DESC
+    FROM researcher_submissions 
+    ORDER BY full_name ASC
   `;
   if (dbMode === 'mysql') {
     const [rows] = await mysqlPool.query(query);

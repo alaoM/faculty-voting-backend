@@ -85,21 +85,20 @@ export async function generateExcelReport() {
   const wsAudit = XLSX.utils.aoa_to_sheet(auditRows);
   XLSX.utils.book_append_sheet(wb, wsAudit, 'Turnout Roster Audit');
 
-  // 4. Research Publications & DOI Audit (For Best Researcher verification)
+  // 4. Research Publications & DOI Dossier (For Best Researcher candidates)
   const pubRows = [
-    ['Nominee Name', 'Nominee Department', 'Award Category', 'Publications & DOI Citations Provided', 'Receipt Ref', 'Submission Date']
+    ['Staff ID', 'Faculty Member Name', 'Department', 'Research Publications & DOI Citations Submitted', 'Submission Date']
   ];
 
   if (researchPublications.length === 0) {
-    pubRows.push(['No publications/DOIs submitted yet', '-', 'Best Researcher', 'N/A', '-', '-']);
+    pubRows.push(['-', 'No faculty publications submitted yet', '-', 'N/A', '-']);
   } else {
     researchPublications.forEach((p) => {
       pubRows.push([
-        p.nominee_name,
-        p.nominee_dept || 'N/A',
-        p.category_title,
+        p.staff_id || 'N/A',
+        p.full_name || p.nominee_name,
+        p.department || p.nominee_dept || 'N/A',
         p.citations,
-        p.receipt_code || 'Secret Ballot',
         p.created_at ? new Date(p.created_at).toLocaleString() : 'N/A'
       ]);
     });
