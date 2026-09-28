@@ -25,7 +25,8 @@ import {
   addManualFaculty,
   invalidateVoterBallot,
   revokeVoterEligibility,
-  getAuditLogs
+  getAuditLogs,
+  getResearchPublications
 } from './db.js';
 import { syncGoogleSheetRoster } from './sync.js';
 import { generateExcelReport } from './export.js';
@@ -421,6 +422,15 @@ app.get('/api/admin/audit-logs', requireAdminAuth, async (req, res) => {
   try {
     const logs = await getAuditLogs();
     res.json({ logs });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/admin/research-publications', requireAdminAuth, async (req, res) => {
+  try {
+    const publications = await getResearchPublications();
+    res.json({ publications });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

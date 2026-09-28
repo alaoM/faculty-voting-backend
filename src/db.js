@@ -31,7 +31,8 @@ const INITIAL_CATEGORIES = [
   { id: 'cat-17', title: 'Most Resourceful', description: 'For the staff member who consistently finds practical solutions with whatever is available, adapting quickly and getting things done even when resources, time, or information are limited.', sort_order: 18 },
   { id: 'cat-18', title: 'Most Dedicated', description: 'For the staff member who shows exceptional commitment and goes above and beyond their basic job requirements.', sort_order: 19 },
   { id: 'cat-19', title: 'Most Courteous Staff Award', description: 'For the staff member known for consistent politeness, respect, and good manners in all interactions.', sort_order: 20 },
-  { id: 'cat-20', title: 'Best Support Staff', description: 'For the non-faculty staff member whose work behind the scenes keeps ARMTI running smoothly.', sort_order: 21 }
+  { id: 'cat-20', title: 'Best Support Staff', description: 'For the non-faculty staff member whose work behind the scenes keeps ARMTI running smoothly.', sort_order: 21 },
+  { id: 'cat-21', title: 'Best Outstation Staff Award', description: 'For outstanding staff serving in ARMTI outstations and regional training centers across the 6 geopolitical zones.', sort_order: 22 }
 ];
 
 let dbMode = 'sqlite';
@@ -147,10 +148,22 @@ async function createMySQLTables() {
       nominee_staff_id VARCHAR(64) NULL,
       nominee_name VARCHAR(255) NOT NULL,
       nominee_dept VARCHAR(255) NULL,
+      citations TEXT NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       INDEX idx_receipt (receipt_code),
       INDEX idx_cat (category_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `);
+
+  const [ballotCols] = await mysqlPool.query('SHOW COLUMNS FROM ballots');
+  const ballotColNames = ballotCols.map(c => c.Field);
+  if (!ballotColNames.includes('citations')) {
+    await mysqlPool.query('ALTER TABLE ballots ADD COLUMN citations TEXT NULL');
+  }
+
+  await mysqlPool.query(`
+    INSERT IGNORE INTO categories (id, title, description, sort_order, is_active)
+    VALUES ('cat-21', 'Best Outstation Staff Award', 'For outstanding staff serving in ARMTI outstations and regional training centers across the 6 geopolitical zones.', 22, 1);
   `);
 
   await mysqlPool.query(`
@@ -214,6 +227,7 @@ function createSQLiteTables() {
       nominee_staff_id TEXT,
       nominee_name TEXT NOT NULL,
       nominee_dept TEXT,
+      citations TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -234,6 +248,7 @@ function createSQLiteTables() {
     INSERT OR IGNORE INTO settings (key_name, val) VALUES ('election_status', 'OPEN');
     INSERT OR IGNORE INTO settings (key_name, val) VALUES ('allow_self_voting', '0');
     INSERT OR IGNORE INTO settings (key_name, val) VALUES ('voting_end_time', '');
+    INSERT OR IGNORE INTO categories (id, title, description, sort_order, is_active) VALUES ('cat-21', 'Best Outstation Staff Award', 'For outstanding staff serving in ARMTI outstations and regional training centers across the 6 geopolitical zones.', 22, 1);
   `);
 
   // Safe Column Migrations for SQLite
@@ -253,6 +268,9 @@ function createSQLiteTables() {
     const ballotCols = sqliteDb.prepare('PRAGMA table_info(ballots)').all().map(c => c.name);
     if (!ballotCols.includes('receipt_code')) {
       sqliteDb.exec('ALTER TABLE ballots ADD COLUMN receipt_code TEXT');
+    }
+    if (!ballotCols.includes('citations')) {
+      sqliteDb.exec('ALTER TABLE ballots ADD COLUMN citations TEXT');
     }
   } catch (err) {
     console.warn('SQLite migration notice:', err.message);
@@ -692,9 +710,9 @@ export async function submitBallot(staffId, votesArray) {
           continue;
         }
         await connection.query(
-          `INSERT INTO ballots (receipt_code, category_id, category_title, nominee_staff_id, nominee_name, nominee_dept)
-           VALUES (?, ?, ?, ?, ?, ?)`,
-          [receiptCode, item.category_id, item.category_title, item.nominee_staff_id || null, item.nominee_name, item.nominee_dept || null]
+          `INSERT INTO ballots (receipt_code, category_id, category_title, nominee_staff_id, nominee_name, nominee_dept, citations)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [receiptCode, item.category_id, item.category_title, item.nominee_staff_id || null, item.nominee_name, item.nominee_dept || null, item.citations?.trim() || null]
         );
       }
 
@@ -724,8 +742,8 @@ export async function submitBallot(staffId, votesArray) {
     }
 
     const insertBallot = sqliteDb.prepare(
-      `INSERT INTO ballots (receipt_code, category_id, category_title, nominee_staff_id, nominee_name, nominee_dept)
-       VALUES (?, ?, ?, ?, ?, ?)`
+      `INSERT INTO ballots (receipt_code, category_id, category_title, nominee_staff_id, nominee_name, nominee_dept, citations)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
     );
     const updateVoter = sqliteDb.prepare(
       `UPDATE voters SET has_voted = 1, voted_at = ?, receipt_code = ? WHERE staff_id = ?`
@@ -736,7 +754,7 @@ export async function submitBallot(staffId, votesArray) {
         if (!item.nominee_name || item.nominee_name === '__ABSTAIN__') {
           continue;
         }
-        insertBallot.run(receiptCode, item.category_id, item.category_title, item.nominee_staff_id || null, item.nominee_name, item.nominee_dept || null);
+        insertBallot.run(receiptCode, item.category_id, item.category_title, item.nominee_staff_id || null, item.nominee_name, item.nominee_dept || null, item.citations?.trim() || null);
       }
       updateVoter.run(now.toISOString(), receiptCode, voter.staff_id);
     });
@@ -856,4 +874,28 @@ export async function resetElection() {
   }
   await logAdminAction('RESET_ELECTION', null, null, 'All ballots were cleared and voter statuses reset.');
   return true;
+}
+
+export async function getResearchPublications() {
+  const query = `
+    SELECT 
+      receipt_code, 
+      category_id, 
+      category_title, 
+      nominee_name, 
+      nominee_dept, 
+      citations, 
+      created_at 
+    FROM ballots 
+    WHERE (category_id = 'cat-2' OR LOWER(category_title) LIKE '%research%')
+      AND citations IS NOT NULL 
+      AND TRIM(citations) != ''
+    ORDER BY created_at DESC
+  `;
+  if (dbMode === 'mysql') {
+    const [rows] = await mysqlPool.query(query);
+    return rows;
+  } else {
+    return sqliteDb.prepare(query).all();
+  }
 }

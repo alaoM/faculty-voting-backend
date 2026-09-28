@@ -1,10 +1,11 @@
 import * as XLSX from 'xlsx';
-import { getResults, getAllVoters, getElectionStatus } from './db.js';
+import { getResults, getAllVoters, getElectionStatus, getResearchPublications } from './db.js';
 
 export async function generateExcelReport() {
   const resultsData = await getResults();
   const allVoters = await getAllVoters();
   const electionStatus = await getElectionStatus();
+  const researchPublications = await getResearchPublications();
   const generatedAt = new Date().toLocaleString();
 
   const wb = XLSX.utils.book_new();
@@ -84,6 +85,30 @@ export async function generateExcelReport() {
   const wsAudit = XLSX.utils.aoa_to_sheet(auditRows);
   XLSX.utils.book_append_sheet(wb, wsAudit, 'Turnout Roster Audit');
 
+  // 4. Research Publications & DOI Audit (For Best Researcher verification)
+  const pubRows = [
+    ['Nominee Name', 'Nominee Department', 'Award Category', 'Publications & DOI Citations Provided', 'Receipt Ref', 'Submission Date']
+  ];
+
+  if (researchPublications.length === 0) {
+    pubRows.push(['No publications/DOIs submitted yet', '-', 'Best Researcher', 'N/A', '-', '-']);
+  } else {
+    researchPublications.forEach((p) => {
+      pubRows.push([
+        p.nominee_name,
+        p.nominee_dept || 'N/A',
+        p.category_title,
+        p.citations,
+        p.receipt_code || 'Secret Ballot',
+        p.created_at ? new Date(p.created_at).toLocaleString() : 'N/A'
+      ]);
+    });
+  }
+
+  const wsPubs = XLSX.utils.aoa_to_sheet(pubRows);
+  XLSX.utils.book_append_sheet(wb, wsPubs, 'Research Publications & DOIs');
+
   const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
   return buffer;
 }
+
