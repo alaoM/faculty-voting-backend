@@ -91,7 +91,7 @@ export async function generateExcelReport() {
   ];
 
   if (researchPublications.length === 0) {
-    pubRows.push(['-', 'No faculty publications submitted yet', '-', 'N/A', '-']);
+    pubRows.push(['-', 'No publications submitted yet', '-', 'N/A', '-']);
   } else {
     researchPublications.forEach((p) => {
       pubRows.push([

@@ -160,7 +160,18 @@ app.post('/api/voter/verify', voterVerifyLimiter, async (req, res) => {
       });
     }
 
-    const voter = await getVoter(staff_id);
+    let voter = await getVoter(staff_id);
+
+    // Instant Just-in-Time Live Fallback: If not found in DB, pull fresh Google Sheet immediately
+    if (!voter) {
+      try {
+        console.log(`🔍 Staff ID '${staff_id.trim()}' not in DB. Checking live Google Sheet on the fly...`);
+        await syncGoogleSheetRoster();
+        voter = await getVoter(staff_id);
+      } catch (syncErr) {
+        console.warn('Live Google Sheet lookup notice:', syncErr.message);
+      }
+    }
 
     if (!voter) {
       return res.status(404).json({
@@ -477,6 +488,20 @@ async function startServer() {
     app.listen(PORT, () => {
       console.log(`🚀 ARMTI Faculty Voting Backend API running at: http://localhost:${PORT}`);
       console.log(`🔐 Admin Protection: Active (ADMIN_PIN configured)`);
+      
+      // Automated Background Google Sheet Sync (Every 60 seconds)
+      const AUTO_SYNC_INTERVAL_MS = 60 * 1000;
+      setInterval(async () => {
+        try {
+          const result = await syncGoogleSheetRoster();
+          if (result.inserted > 0 || result.updated > 0) {
+            console.log(`🔄 Auto-Sync: ${result.inserted} new faculty added, ${result.updated} updated. Total: ${result.unique_faculty}`);
+          }
+        } catch (autoErr) {
+          // Log quiet warning without interrupting server
+        }
+      }, AUTO_SYNC_INTERVAL_MS);
+      console.log('⚡ Automated Live Google Sheet Sync: Active (60s interval + Just-In-Time verification)');
     });
   } catch (err) {
     console.error('❌ Failed to start server:', err);
