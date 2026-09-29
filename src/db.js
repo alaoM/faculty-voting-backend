@@ -673,6 +673,43 @@ export async function updateSetting(key, val) {
   return true;
 }
 
+export function validatePublicationYears(text) {
+  if (!text || !text.trim()) {
+    return { valid: true };
+  }
+
+  const cleanText = text.trim();
+  const yearMatches = cleanText.match(/\b(19\d{2}|20\d{2})\b/g) || [];
+  const years = yearMatches.map(Number);
+
+  const invalidPastYears = years.filter((y) => y < 2025);
+  if (invalidPastYears.length > 0) {
+    const earliestInvalid = Math.min(...invalidPastYears);
+    return {
+      valid: false,
+      error: `Invalid publication year detected (${earliestInvalid}). Only publications published in 2025 and 2026 are eligible for the 2026 Faculty Awards.`
+    };
+  }
+
+  const futureYears = years.filter((y) => y > 2026);
+  if (futureYears.length > 0) {
+    return {
+      valid: false,
+      error: `Invalid publication year detected (${futureYears[0]}). Only publications from 2025 and 2026 are eligible.`
+    };
+  }
+
+  const validYears = years.filter((y) => y === 2025 || y === 2026);
+  if (validYears.length === 0) {
+    return {
+      valid: false,
+      error: 'Please explicitly state the publication year (2025 or 2026) for your research output (e.g., "(2025)" or "(2026)").'
+    };
+  }
+
+  return { valid: true, validYears };
+}
+
 export async function submitBallot(staffId, votesArray) {
   const normalizedId = String(staffId).trim();
   const receiptCode = 'ARMTI-' + Math.random().toString(36).substring(2, 8).toUpperCase() + '-' + Date.now().toString().slice(-4);
@@ -691,6 +728,17 @@ export async function submitBallot(staffId, votesArray) {
       throw new Error(`Duplicate vote submitted for category '${item.category_title}'.`);
     }
     seenCategories.add(item.category_id);
+  }
+
+  // Validate Publication Years for Best Researcher (Strict 2025 & 2026 only)
+  const researcherItem = votesArray.find(
+    (item) => item.category_id === 'cat-2' || item.category_title?.toLowerCase().includes('research')
+  );
+  if (researcherItem && researcherItem.citations && researcherItem.citations.trim()) {
+    const yearValidation = validatePublicationYears(researcherItem.citations);
+    if (!yearValidation.valid) {
+      throw new Error(yearValidation.error);
+    }
   }
 
   const settings = await getSettings();

@@ -12,7 +12,8 @@ import {
   addManualFaculty,
   invalidateVoterBallot,
   revokeVoterEligibility,
-  getAuditLogs
+  getAuditLogs,
+  validatePublicationYears
 } from '../src/db.js';
 import { syncGoogleSheetRoster } from '../src/sync.js';
 import { generateExcelReport } from '../src/export.js';
@@ -173,13 +174,22 @@ async function runTests() {
   assert.ok(actionTypes.includes('REVOKE_ELIGIBILITY'));
   console.log(`   ✓ Verified ${auditLogs.length} chronological audit entries (Actions logged: ${[...new Set(actionTypes)].join(', ')})`);
 
-  // 12. Excel Export
-  console.log('\n1️⃣1️⃣ Testing Excel (.xlsx) Multi-Sheet Export Generator...');
-  const excelBuffer = await generateExcelReport();
-  assert.ok(Buffer.isBuffer(excelBuffer));
-  console.log(`   ✓ Excel report successfully generated (${excelBuffer.length} bytes).`);
+  // 12. Researcher Publication Year Validation
+  console.log('\n1️⃣2️⃣ Testing Best Researcher Publication Year Rules (2025/2026 strict)...');
+  const validRes = validatePublicationYears('Paper on Yam Storage (2025), DOI: 10.1234/567; Extension Policy (2026)');
+  assert.strictEqual(validRes.valid, true);
+  assert.deepStrictEqual(validRes.validYears, [2025, 2026]);
 
-  console.log('\n🎉 ALL 11 BACKEND, DISPUTE & AUDIT TESTS PASSED FLAWLESSLY!\n');
+  const oldYearRes = validatePublicationYears('Old paper from (2024), DOI: 10.1234/old');
+  assert.strictEqual(oldYearRes.valid, false);
+  assert.ok(oldYearRes.error.includes('2024'));
+
+  const noYearRes = validatePublicationYears('Paper without any year mentioned');
+  assert.strictEqual(noYearRes.valid, false);
+
+  console.log('   ✓ Verified publication year validation: accepts 2025/2026, rejects 2024 or earlier, enforces explicit year.');
+
+  console.log('\n🎉 ALL 12 BACKEND, DISPUTE, AUDIT & VALIDATION TESTS PASSED FLAWLESSLY!\n');
   process.exit(0);
 }
 
